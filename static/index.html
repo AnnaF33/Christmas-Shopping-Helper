@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Christmas Shopping Helper</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="styles.css" rel="stylesheet">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div class="strip" id="strip" aria-hidden="true"></div>
+<header><div class="wrap">
+  <div class="hero">
+    <div>
+      <div class="kicker">Christmas Shopping Helper</div>
+      <h1>Who's on your list<br>this year?</h1>
+      <p>Tell me a little about each person and I'll find three gifts they'll love.</p>
+    </div>
+    <svg class="heroart" viewBox="0 0 220 200" aria-hidden="true" id="heroart"></svg>
+  </div>
+  <nav class="steps">
+    <button id="tab1" class="on" onclick="go(1)">1 · Gift list</button>
+    <button id="tab2" onclick="go(2)">2 · Recommendations</button>
+    <button id="tab3" onclick="go(3)">3 · Basket</button>
+  </nav>
+</div></header>
+
+<main class="wrap">
+<div class="note" id="note">Connecting…</div>
+
+<section id="s1">
+  <h2>Add someone</h2>
+  <form class="card" id="form">
+    <div class="grid">
+      <div><label>Name <i class="req">*</i></label><input id="f_name" required placeholder="e.g. Grandma Jo"></div>
+      <div><label>Relationship <i class="req">*</i></label><select id="f_rel" required><option value="">Choose…</option></select></div>
+      <div><label>Age band <span id="ageReq"><span>(optional)</span></span></label><select id="f_age"><option value="">Not sure</option></select></div>
+      <div class="span3"><label>Interests <i class="req">*</i> <span>(comma separated)</span></label><input id="f_int" required placeholder="e.g. gardening, baking, crime novels"></div>
+      <div class="span3"><label>Anything they've asked for or mentioned? <span>(optional, comma separated)</span></label><input id="f_asked" placeholder="e.g. a new scarf, pasta maker"></div>
+      <div class="span2"><label>Price range in USD <i class="req">*</i> <b class="pv" id="pv"></b></label><div class="dual"><div class="trk"></div><div class="fill" id="fill"></div><input id="f_min" type="range" min="0" max="500" step="5" value="20" aria-label="Minimum price"><input id="f_max" type="range" min="0" max="500" step="5" value="100" aria-label="Maximum price"></div><div class="ends"><span>$0</span><span>$500+</span></div><p class="hint" id="sug" style="margin-top:4px"></p></div>
+      <div><label>Gender <span>(optional, not used for ranking)</span></label><select id="f_gen"><option value="">Prefer not to say</option><option>Female</option><option>Male</option><option>Non-binary</option></select></div>
+      <div class="span3" style="text-align:right"><button class="btn" type="submit" id="addBtn" style="min-width:220px">Add recipient</button></div>
+    </div>
+    <p class="hint"><span class="req">*</span> Required</p>
+  </form>
+  <h2>Your list</h2>
+  <div id="people" class="people"></div>
+  <div class="row" style="margin-top:16px"><button class="btn red" id="findBtn" onclick="go(2)">Find gifts →</button><button class="btn ghost sm" onclick="demo()">Load example family</button></div>
+</section>
+
+<section id="s2" class="hide">
+  <h2>Recommendations</h2>
+  <p class="meta">Tick the gifts you want. Use “Swap” for a different idea.</p>
+  <div id="recs"></div>
+</section>
+
+<section id="s3" class="hide">
+  <h2>Your basket</h2>
+  <div id="basket"></div>
+</section>
+</main>
+
+<div class="bar hide" id="bar"><span id="barTxt"></span><button class="btn red" onclick="go(3)">Review basket →</button></div>
+
+<script src="app.js"></script>
+</body>
+</html>
