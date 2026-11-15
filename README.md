@@ -30,6 +30,19 @@ Then open http://localhost:5000 in your browser. Press Ctrl+C in the prompt to s
 
 To run the tests: `python -m pytest`
 
+## Hosting (Render)
+
+The app is set up to run on Render's free plan, deployed from the GitHub repository.
+
+- Build command: `pip install -r requirements.txt`
+- Start command: `gunicorn wsgi:app`
+
+Free services go to sleep after 15 minutes without visitors, so the first visit after a
+quiet spell takes about a minute to load. The gift list is stored in each visitor's own
+browser, so nothing is lost when the service sleeps.
+
+To publish a change: upload the changed files to GitHub and Render redeploys by itself.
+
 ## What's where
 
 | File | What it does |
@@ -40,6 +53,7 @@ To run the tests: `python -m pytest`
 | `models.py` | The `Product` and `Recipient` definitions, and input validation |
 | `catalogue/sample.py` | The 38 invented sample products |
 | `catalogue/etsy.py` | Etsy connection (stub, see below) |
+| `wsgi.py` | Entry point the hosting service uses |
 | `static/` | The web page: `index.html`, `styles.css`, `app.js` |
 | `tests/test_app.py` | Automated checks of the rules and the API |
 
@@ -79,5 +93,4 @@ product is tested, but expect small fixes on first use. Known gaps:
 
 - Model-based matching and labelling of real listings
 - User accounts (the gift list is saved in the browser only)
-- Hosting on the public internet (it runs on your own computer for now)
 - Agent checkout (v2). In this version you buy at the shop.
