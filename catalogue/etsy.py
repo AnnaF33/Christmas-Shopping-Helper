@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import requests
 
-from matching import terms
+from matching import search_phrase, terms
 from models import Product
 
 from . import CatalogueError
@@ -60,7 +60,7 @@ class EtsySource:
         queries = (terms(recipient.asked) + terms(recipient.interests))[:MAX_SEARCHES]
         found: dict[int, tuple[dict, str]] = {}
         for q in queries:
-            params = {"keywords": q, "limit": PER_SEARCH, "min_price": recipient.min_price}
+            params = {"keywords": search_phrase(q), "limit": PER_SEARCH, "min_price": recipient.min_price}
             if recipient.max_price is not None:
                 params["max_price"] = recipient.max_price
             for listing in self._get("/listings/active", params).get("results", []):

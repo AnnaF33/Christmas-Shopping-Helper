@@ -151,3 +151,138 @@ def test_etsy_listing_converts_to_product():
     p = to_product(listing, "gardening", extra)
     assert (p.id, p.price, p.shop) == ("etsy-123", 42.5, "KnitCo")
     assert p.tags == ["scarf", "winter", "gardening"] and p.image_url.endswith("x.jpg")
+
+
+# ---- Shopify source (no network: parsing and conversion only)
+
+from catalogue import MultiSource, label
+from catalogue.shopify import ShopifySource, parse_response
+from catalogue.shopify import to_product as shopify_product
+import json as _json
+
+SHOPIFY_RAW = {
+    "id": "gid://shopify/p/7f3a2b8c1d9e", "title": "Trail Runner Pro",
+    "url": "https://example-running.myshopify.com/products/trail-runner-pro",
+    "categories": [{"value": "5133", "taxonomy": "google_product_category"},
+                   {"value": "Sporting Goods > Athletics > Running > Shoes", "taxonomy": "merchant"}],
+    "price_range": {"min": {"amount": 8999, "currency": "USD"}, "max": {"amount": 12999, "currency": "USD"}},
+    "media": [{"type": "image", "url": "https://cdn.shopify.com/products/trail-runner-pro.jpg"}],
+    "variants": [{"id": "gid://shopify/ProductVariant/12345678", "price": {"amount": 8999, "currency": "USD"},
+                  "tags": ["road", "Lightweight"], "seller": {"name": "Example Running"}}],
+}
+
+
+def _reply(products):
+    return _json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"structuredContent": {"products": products}}})
+
+
+def test_shopify_result_converts_to_product():
+    p = shopify_product(SHOPIFY_RAW, "running")
+    assert (p.id, p.name, p.shop, p.price) == ("shopify-7f3a2b8c1d9e", "Trail Runner Pro", "Example Running", 89.99)
+    assert p.url.endswith("/products/trail-runner-pro") and p.image_url.endswith("trail-runner-pro.jpg")
+    assert {"road", "lightweight", "running", "shoes"} <= set(p.tags)
+    assert shopify_product({**SHOPIFY_RAW, "price_range": {"min": {"amount": 500, "currency": "EUR"}}}, "x") is None
+    assert shopify_product({**SHOPIFY_RAW, "title": "Running Store Gift Card"}, "x").is_gift_card
+
+
+def test_shopify_reply_parsing():
+    assert parse_response(_reply([SHOPIFY_RAW]))[0]["title"] == "Trail Runner Pro"
+    assert parse_response("event: message\ndata: " + _reply([SHOPIFY_RAW]) + "\n\n")[0]["title"] == "Trail Runner Pro"
+    text_form = _json.dumps({"result": {"content": [{"type": "text", "text": _json.dumps({"products": [SHOPIFY_RAW]})}]}})
+    assert len(parse_response(text_form)) == 1
+    for bad in ('{"error": {"message": "invalid profile"}}', "<html>oops</html>",
+                '{"result": {"isError": true, "content": [{"type": "text", "text": "nope"}]}}'):
+        with pytest.raises(CatalogueError):
+            parse_response(bad)
+
+
+def test_shopify_search_sends_price_in_cents_and_ranks_results(monkeypatch):
+    sent = []
+
+    def fake_call(self, catalog, profile):
+        sent.append((catalog, profile))
+        return [SHOPIFY_RAW]
+
+    monkeypatch.setattr(ShopifySource, "_call", fake_call)
+    r = Recipient.from_dict({**SAM, "int": "running, coffee", "min": "50", "max": "100"})
+    products = ShopifySource("https://example.test/profile.json").candidates(r)
+    assert len(products) == 1 and len(sent) == 2  # two interests searched, duplicate result merged
+    catalog, profile = sent[0]
+    assert catalog["filters"]["price"] == {"min": 5000, "max": 10000}
+    assert catalog["filters"]["ships_to"] == {"country": "US"} and catalog["query"] == "running"
+    assert profile == "https://example.test/profile.json"
+    pick = matching.recommend(r, products)["picks"][0]
+    assert matching.why(r, pick) == "Fits interest: running"
+    kid = Recipient.from_dict({**MAX, "int": "lego"})
+    ShopifySource().candidates(kid)
+    assert sent[-1][0]["query"] == "lego for kids"
+
+
+def test_shopify_falls_back_to_example_profile(monkeypatch):
+    from catalogue import shopify
+    seen = []
+
+    def fake_call(self, catalog, profile):
+        seen.append(profile)
+        if profile != shopify.EXAMPLE_PROFILE:
+            raise CatalogueError("profile rejected")
+        return [SHOPIFY_RAW]
+
+    monkeypatch.setattr(ShopifySource, "_call", fake_call)
+    src = ShopifySource("https://example.test/profile.json")
+    assert len(src.candidates(Recipient.from_dict(SAM))) == 1
+    assert seen[0] == "https://example.test/profile.json" and seen[-1] == shopify.EXAMPLE_PROFILE
+
+
+class _Broken:
+    name = "etsy"
+
+    def candidates(self, recipient):
+        raise CatalogueError("Etsy is down")
+
+
+def test_multi_source_survives_one_failure_and_labels_itself():
+    multi = MultiSource([SampleSource(), _Broken()])
+    assert len(multi.candidates(Recipient.from_dict(SAM))) == 38
+    assert multi.name == "sample+etsy" and label(multi) == "the sample catalogue and Etsy"
+    with pytest.raises(CatalogueError, match="Etsy is down"):
+        MultiSource([_Broken(), _Broken()]).candidates(Recipient.from_dict(SAM))
+
+
+def test_source_selection_from_settings():
+    assert get_source({}).name == "sample"
+    assert get_source({"CATALOGUE_SOURCE": "Shopify"}).name == "shopify"
+    assert get_source({"CATALOGUE_SOURCE": "shopify, sample"}).name == "shopify+sample"
+    on_render = get_source({"CATALOGUE_SOURCE": "shopify", "RENDER_EXTERNAL_URL": "https://x.onrender.com"})
+    assert on_render._profile == "https://x.onrender.com/ucp-agent-profile.json"
+    with pytest.raises(CatalogueError, match="Unknown"):
+        get_source({"CATALOGUE_SOURCE": "amazon"})
+
+
+def test_agent_profile_is_served(client):
+    profile = client.get("/ucp-agent-profile.json").get_json()
+    assert "dev.shopify.catalog.global" in profile["ucp"]["capabilities"]
+
+
+def test_usage_limits():
+    from app import Limiter
+    c = create_app(SampleSource(), Limiter(per_visitor=(2, 600), daily=3)).test_client()
+    post = lambda ip: c.post("/api/recommendations", json={"recipient": GRANDMA}, headers={"X-Forwarded-For": ip})
+    assert post("1.1.1.1").status_code == 200 and post("1.1.1.1").status_code == 200
+    assert post("1.1.1.1").status_code == 429  # this visitor is over their limit
+    assert post("2.2.2.2").status_code == 200  # another visitor is unaffected
+    r = post("3.3.3.3")
+    assert r.status_code == 429 and "today" in r.get_json()["error"]  # daily cap reached
+
+
+def test_picks_are_spread_across_reasons():
+    _, out = rec(GRANDMA)  # asked for a scarf; interests gardening, baking, crime novels
+    reasons = [s.asked or s.interest for s in out["picks"]]
+    assert reasons == ["a new scarf", "gardening", "baking"]
+    _, out = rec(SAM)  # only two interests, so the third pick repeats one
+    assert {s.interest for s in out["picks"]} == {"coffee", "hiking"} and len(out["picks"]) == 3
+
+
+def test_search_phrase_drops_filler_words():
+    assert matching.search_phrase("a new scarf") == "scarf"
+    assert matching.search_phrase("the") == "the" and matching.search_phrase("pasta maker") == "pasta maker"

@@ -3,8 +3,7 @@
 Enter the people you're buying for, get three gift recommendations each, tick the ones you
 want, and review a basket grouped by shop.
 
-This is the first real-app version: a small Python server plus the web page. It runs on the
-invented sample catalogue until an Etsy API key is added.
+This is the first real-app version: a small Python server plus the web page. It can search the invented sample catalogue, Shopify, Etsy, or several at once.
 
 ## Run it
 
@@ -52,7 +51,9 @@ To publish a change: upload the changed files to GitHub and Render redeploys by 
 | `matching.py` | Scores products for a recipient and picks the best three |
 | `models.py` | The `Product` and `Recipient` definitions, and input validation |
 | `catalogue/sample.py` | The 38 invented sample products |
-| `catalogue/etsy.py` | Etsy connection (stub, see below) |
+| `catalogue/shopify.py` | Shopify connection: searches every Shopify merchant |
+| `catalogue/etsy.py` | Etsy connection (waiting on API approval) |
+| `gunicorn.conf.py` | Web server settings used by the hosting service |
 | `wsgi.py` | Entry point the hosting service uses |
 | `static/` | The web page: `index.html`, `styles.css`, `app.js` |
 | `tests/test_app.py` | Automated checks of the rules and the API |
@@ -67,27 +68,49 @@ the changes up from the server.
    colleague, or a gift card nobody asked for.
 2. What's left is scored: asked for (40), fits an interest (30), usefulness (15),
    relationship fit (10), age fit (5). Gender is recorded but worth 0.
-3. If the person asked for something that's available, it is guaranteed one of the three places.
+3. The three picks are spread across different reasons, so one asked-for item and two
+   different interests where possible. An available asked-for item always gets a place.
 
 The matching is keyword overlap. It is a stand-in until a model does the judging.
 
-## Switching on Etsy
+## Choosing the shops
 
-1. Create a personal app at https://www.etsy.com/developers and wait for approval.
-2. Copy `.env.example` to `.env`.
-3. In `.env`, set `CATALOGUE_SOURCE=etsy` and paste in `ETSY_KEYSTRING` and `ETSY_SHARED_SECRET`.
-4. Restart the server.
+The `CATALOGUE_SOURCE` setting picks where products come from: `sample`, `shopify` or
+`etsy`. List several separated by commas to search them together, e.g. `shopify,etsy`.
+If one shop is down, results still come from the others.
 
-Never share `.env` or commit it; `.gitignore` already excludes it.
+On Render, set it under the service's **Environment** tab. On your own computer, copy
+`.env.example` to `.env` and set it there. Never share `.env` or commit it.
 
-**The Etsy code has not been run against the live API**, because there was no key when it
-was written. It follows Etsy's documentation, and the conversion from an Etsy listing to a
-product is tested, but expect small fixes on first use. Known gaps:
+### Shopify
 
-- Etsy listings have no age range, usefulness or "too personal" label, so every listing gets
-  a neutral default. Child safety filtering in particular is not reliable on Etsy data yet.
-- No caching or rate-limit handling.
-- Prices are assumed to be in USD.
+No key or approval needed. Set `CATALOGUE_SOURCE=shopify`. One search covers every Shopify
+merchant. The app serves a small "agent profile" file at `/ucp-agent-profile.json`, which
+Shopify reads to learn what the app does.
+
+### Etsy
+
+1. Wait for the personal app at https://www.etsy.com/developers to be approved.
+2. Set `ETSY_KEYSTRING` and `ETSY_SHARED_SECRET` (Render Environment tab, or `.env`).
+3. Add `etsy` to `CATALOGUE_SOURCE`.
+
+### What to know about live shops
+
+**Neither the Shopify nor the Etsy code had been run against the real service when it was
+written.** Both follow the official documentation and their result handling is tested
+against the documented examples, but expect small fixes on first use.
+
+- Real listings have no age range, usefulness or "too personal" label, so each gets a
+  neutral default. For children, Shopify searches add "for kids" or "for teens", which is
+  a hint and not a safety filter. Check children's picks yourself for now.
+- Only USD prices are shown.
+- Nothing is stored: every search is live, which also satisfies Shopify's rule against
+  keeping prices for more than 10 minutes.
+
+## Usage limits
+
+To protect the shops' request allowances, the public site allows 30 recipient searches per
+visitor per 10 minutes and 800 per day in total. Change these in `rules.py`.
 
 ## Not built yet
 

@@ -11,13 +11,16 @@ API keys live in .env on the server and are never sent to the browser.
 from __future__ import annotations
 
 import os
+import threading
+import time
+from collections import defaultdict, deque
 from dataclasses import asdict
 
 from flask import Flask, jsonify, request
 
 import matching
 import rules
-from catalogue import CatalogueError, get_source
+from catalogue import CatalogueError, get_source, label
 from models import Recipient
 
 try:  # .env is optional: the sample catalogue needs no settings
@@ -36,9 +39,39 @@ def _product_json(recipient, scored) -> dict:
     return p
 
 
-def create_app(source=None) -> Flask:
+class Limiter:
+    """Small in-memory usage limiter. Resets when the server restarts, which is fine here."""
+
+    def __init__(self, per_visitor=rules.RATE_LIMIT_PER_VISITOR, daily=rules.DAILY_SEARCH_LIMIT):
+        self.max_hits, self.window = per_visitor
+        self.daily = daily
+        self._hits = defaultdict(deque)
+        self._day, self._count = None, 0
+        self._lock = threading.Lock()
+
+    def check(self, visitor: str) -> str | None:
+        """Returns None if the request may go ahead, otherwise a message for the user."""
+        now = time.time()
+        with self._lock:
+            today = time.strftime("%Y-%m-%d", time.gmtime(now))
+            if today != self._day:
+                self._day, self._count = today, 0
+            if self._count >= self.daily:
+                return "The app has reached its search limit for today. Please try again tomorrow."
+            hits = self._hits[visitor]
+            while hits and now - hits[0] > self.window:
+                hits.popleft()
+            if len(hits) >= self.max_hits:
+                return "That's a lot of searches in a short time. Please wait a few minutes and try again."
+            hits.append(now)
+            self._count += 1
+            return None
+
+
+def create_app(source=None, limiter=None) -> Flask:
     app = Flask(__name__, static_folder="static", static_url_path="")
     state = {"source": source, "error": None}
+    limiter = limiter or Limiter()
     if source is None:
         try:
             state["source"] = get_source(dict(os.environ))
@@ -59,6 +92,7 @@ def create_app(source=None) -> Flask:
     def config():
         return jsonify(
             source=state["source"].name if state["source"] else None,
+            source_label=label(state["source"]) if state["source"] else None,
             error=state["error"],
             relationships=[{"name": name, "tier": tier, "min": lo, "max": hi,
                             "age_required": name in rules.KID_RELATIONSHIPS}
@@ -75,6 +109,11 @@ def create_app(source=None) -> Flask:
             recipient = Recipient.from_dict(body.get("recipient"))
         except ValueError as e:
             return jsonify(error=str(e)), 400
+        # Behind the hosting service's proxy the visitor's address is in X-Forwarded-For.
+        visitor = (request.headers.get("X-Forwarded-For") or request.remote_addr or "?").split(",")[0].strip()
+        blocked = limiter.check(visitor)
+        if blocked:
+            return jsonify(error=blocked), 429
         try:
             products = state["source"].candidates(recipient)
         except CatalogueError as e:

@@ -45,3 +45,7 @@ GIFT_CARD_WORDS = ("gift card", "giftcard", "voucher")
 
 PICKS = 3  # recommendations shown per recipient
 ALTERNATES = 12  # extra ranked ideas sent to the browser for the Swap button
+
+# Usage limits on the public site, to protect the shops' request allowances.
+RATE_LIMIT_PER_VISITOR = (30, 600)  # at most 30 recipient searches per visitor per 10 minutes
+DAILY_SEARCH_LIMIT = 800  # recipient searches per day across everyone (each makes up to 5 shop searches)

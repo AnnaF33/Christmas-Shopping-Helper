@@ -3,7 +3,8 @@
 Order of operations:
   1. Hard rules remove products outright (price, age band, relationship, gift cards).
   2. Weighted signals rank what is left (asked-for, interests, usefulness, relationship, age).
-  3. At least one asked-for item is guaranteed a place when one is available.
+  3. The three picks are spread across different reasons (asked-for items, interests),
+     and at least one asked-for item is guaranteed a place when one is available.
 
 This is keyword matching, a stand-in until a model does the judging (step 4 of the plan).
 """
@@ -27,6 +28,11 @@ class Scored:
 def terms(text: str) -> list[str]:
     """'Gardening, crime novels' -> ['gardening', 'crime novels']"""
     return [t.strip() for t in re.split(r"[,;]+", (text or "").lower()) if t.strip()]
+
+
+def search_phrase(term: str) -> str:
+    """'a new scarf' -> 'scarf'. Tidies a term before it is sent to a shop's search."""
+    return re.sub(r"^((a|an|the|some|new|any)\s+)+", "", term).strip() or term
 
 
 def interest_hit(word: str, p: Product) -> bool:
@@ -109,7 +115,22 @@ def why(r: Recipient, s: Scored) -> str:
 def recommend(r: Recipient, products: list[Product]) -> dict:
     """Returns {'picks': [...], 'alternates': [...], 'missing_asked': [...]}."""
     ranked = rank(r, products)
-    picks = ranked[:rules.PICKS]
+    # Variety first: one pick per reason (each asked-for item, each interest), best score
+    # first. A big catalogue would otherwise return three near-identical scarves.
+    picks, reasons = [], set()
+    for s in ranked:
+        reason = s.asked or s.interest
+        if not reason or reason in reasons:
+            continue
+        picks.append(s)
+        reasons.add(reason)
+        if len(picks) == rules.PICKS:
+            break
+    for s in ranked:  # not enough distinct reasons: fill up with the next best
+        if len(picks) == rules.PICKS:
+            break
+        if s not in picks:
+            picks.append(s)
     if picks and not any(s.asked for s in picks):
         best_asked = next((s for s in ranked if s.asked), None)
         if best_asked:

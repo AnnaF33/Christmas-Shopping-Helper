@@ -31,7 +31,7 @@ async function init(){
     $("f_age").insertAdjacentHTML("beforeend",CFG.age_bands.map(b=>`<option value="${esc(b.value)}">${esc(b.label)}</option>`).join(""));
     if(CFG.error)note(CFG.error,true);
     else if(CFG.source==="sample")note("<b>Sample catalogue.</b> Products, shops and prices are invented, links go nowhere, and nothing can be bought.");
-    else note("<b>Live listings from "+esc(CFG.source)+".</b> You buy at the shop; nothing is purchased from this page.");
+    else note("<b>Live listings from "+esc(CFG.source_label||CFG.source)+".</b> Prices can change, and you buy at the shop. Nothing is purchased from this page.");
   }catch(e){note(esc(e.message),true)}
   // Bring recipients saved by earlier versions up to date (numeric ages become bands).
   people.forEach(p=>{p.asked=p.asked||"";if(p.age&&!band(p.age)){const n=+p.age,b=CFG.age_bands.find(b=>n>=b.min&&n<=b.max);p.age=b?b.value:""}});
@@ -113,7 +113,7 @@ function renderRecs(){
      ${shopLink(it)}</div></div>`}).join("");
    const miss=r.missing.length?`<p class="miss">Asked for, but not found at this price: ${esc(r.missing.join(", "))}.</p>`:"";
    const body=r.error?`<div class="note err" style="margin:0">${esc(r.error)}</div>`:
-     r.ids.length?`<div class="recs">${cards}</div>${miss}`:`<div class="card meta">Nothing fits this age and price range. Try widening the price range.</div>${miss}`;
+     r.ids.length?`<div class="recs">${cards}</div>${miss}`:`<div class="card meta">Nothing found for these interests at this price. Try widening the price range or rewording the interests.</div>${miss}`;
    return `<div class="sec"><h3>${esc(label(p,i))} <span class="meta">· ${esc(desc(p))}</span></h3>${body}</div>`}).join("");
 }
 
