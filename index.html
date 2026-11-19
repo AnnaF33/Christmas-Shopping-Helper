@@ -77,6 +77,23 @@
   </form>
 </dialog>
 
+<dialog id="cardDlg" aria-labelledby="cardTitle">
+  <form id="cardForm" novalidate>
+    <h2 id="cardTitle" style="margin-top:0">Save a card</h2>
+    <p class="meta">Stripe's secure form: your card number goes to Stripe, never to this app. This is a sandbox, so use the test card <b>4242 4242 4242 4242</b>, any future date and any 3-digit code.</p>
+    <div id="cardMount" style="min-height:120px"></div>
+    <div class="note err hide" id="cardErr" role="alert"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn ghost" type="button" id="cardCancel">Cancel</button><button class="btn" type="submit" id="cardGo">Save card</button></div>
+  </form>
+</dialog>
+
+<dialog id="apDlg" aria-labelledby="apTitle">
+  <h2 id="apTitle" style="margin-top:0">Approve this purchase</h2>
+  <table id="apList"></table>
+  <p class="meta" id="apText" style="margin-top:12px"></p>
+  <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn ghost" type="button" id="apCancel">Cancel</button><button class="btn red" type="button" id="apGo">Approve and buy</button></div>
+</dialog>
+
 <div class="bar hide" id="bar"><span id="barTxt"></span><button class="btn red" onclick="go(3)">Review basket →</button></div>
 
 <script src="app.js"></script>

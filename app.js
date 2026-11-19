@@ -30,7 +30,7 @@ async function init(){
     $("f_rel").insertAdjacentHTML("beforeend",CFG.relationships.map(r=>`<option>${esc(r.name)}</option>`).join(""));
     $("f_age").insertAdjacentHTML("beforeend",CFG.age_bands.map(b=>`<option value="${esc(b.value)}">${esc(b.label)}</option>`).join(""));
     if(CFG.error)note(CFG.error,true);
-    else if(CFG.source==="sample")note("<b>Sample catalogue.</b> Products, shops and prices are invented, links go nowhere, and nothing can be bought.");
+    else if(CFG.source==="sample")note("<b>Sample catalogue.</b> Products, shops and prices are invented and the shop links go nowhere. Your agent can buy these gifts from North Pole Gift Co, a demo seller, in Stripe's sandbox: no real money moves.");
     else note("<b>Live listings from "+esc(CFG.source_label||CFG.source)+".</b> Prices can change, and you buy at the shop. Nothing is purchased from this page.");
   }catch(e){note(esc(e.message),true)}
   // Bring recipients saved by earlier versions up to date (numeric ages become bands).
@@ -121,19 +121,90 @@ function renderRecs(){
 function totals(){let n=0,t=0;people.forEach(p=>(picked[p.id]||[]).forEach(id=>{n++;t+=P[id].price}));return{n,t}}
 function bar(){const{n,t}=totals();$("bar").classList.toggle("hide",!n||cur===3);$("barTxt").textContent=n+" gift"+(n===1?"":"s")+" selected · "+money(t)}
 function renderBasket(){
-  const by={};people.forEach((p,i)=>(picked[p.id]||[]).forEach(id=>{const it=P[id];(by[it.shop]=by[it.shop]||[]).push({it,who:label(p,i)})}));
+  const by={};people.forEach((p,i)=>(picked[p.id]||[]).forEach(id=>{const it=P[id];(by[it.shop]=by[it.shop]||[]).push({it,who:label(p,i),bought:BOUGHT[boughtKey(p.id,id)]})}));
   const shops=Object.keys(by),{n,t}=totals();
   const none=people.filter(p=>!(picked[p.id]||[]).length).map(p=>label(p,people.indexOf(p)));
   if(!n){$("basket").innerHTML=`<div class="card meta">Nothing selected yet. Go back to Recommendations and tick some gifts.</div>`;return}
   $("basket").innerHTML=shops.map(s=>{const sub=by[s].reduce((a,x)=>a+x.it.price,0);
    return `<div class="card sec"><h3 style="margin:0 0 8px">${esc(s)}</h3>
    <table><tr><th>Gift</th><th>For</th><th class="r">Price</th><th class="r">Buy</th></tr>${by[s].map(x=>`<tr><td>${x.it.image_url?"":esc(x.it.emoji)+" "}${esc(x.it.name)}</td><td>${esc(x.who)}</td><td class="r">${money(x.it.price)}</td>
-   <td class="r">${x.it.url?`<a href="${esc(x.it.url)}" target="_blank" rel="noopener">Buy at shop ↗</a>`:`<span class="meta">sample</span>`}</td></tr>`).join("")}
+   <td class="r">${x.bought?`<span class="bought" title="Order ${esc(x.bought)}">Bought ✓</span>`:x.it.url?`<a href="${esc(x.it.url)}" target="_blank" rel="noopener">Buy at shop ↗</a>`:`<span class="meta">sample</span>`}</td></tr>`).join("")}
    <tr><td colspan="2"><b>Subtotal</b></td><td class="r"><b>${money(sub)}</b></td><td></td></tr></table></div>`}).join("")+
    `<div class="card"><div class="row" style="justify-content:space-between"><div><div class="meta">${n} gift${n===1?"":"s"} from ${shops.length} shop${shops.length===1?"":"s"}, before shipping and tax</div><div class="total">${money(t)}</div></div>
-   <button class="btn red" disabled>Buy all with one approval (coming in v2)</button></div>
-   ${none.length?`<p class="meta" style="margin-bottom:0">Still nothing chosen for: ${esc(none.join(", "))}</p>`:""}</div>`;
+   </div>
+   ${none.length?`<p class="meta" style="margin-bottom:0">Still nothing chosen for: ${esc(none.join(", "))}</p>`:""}</div>
+   <div id="agentBox"></div>`;
+  renderAgent();loadWallet();
 }
+
+// ---- Agent checkout (the "save a card in the app" path)
+// The buyer saves a card with Stripe, sets a mandate (cap + end date), and approves the
+// basket once. The server opens a checkout at North Pole Gift Co, issues a payment token
+// capped at that total, and the shop charges it. Every step appears in the activity log.
+let WALLET=null,STOCK=null,ACTIVITY=[],LAST=null,stripeJs=null,elements=null,busy=false;
+let BOUGHT={};try{BOUGHT=JSON.parse(localStorage.getItem("csa_bought")||"{}")}catch(e){BOUGHT={}}
+const boughtKey=(pid,id)=>pid+":"+id;
+function markBought(items,order){items.forEach(x=>{BOUGHT[boughtKey(x.pid,x.id)]=order});try{localStorage.setItem("csa_bought",JSON.stringify(BOUGHT))}catch(e){}}
+const fmtDate=t=>new Date(t*1000).toLocaleDateString(undefined,{day:"numeric",month:"short",year:"numeric"});
+const cents=c=>money(c/100);
+function basketItems(){const out=[];people.forEach((p,i)=>(picked[p.id]||[]).forEach(id=>out.push({id,pid:p.id,for:label(p,i),budget_max:p.max===""?null:+p.max,it:P[id],bought:BOUGHT[boughtKey(p.id,id)]})));return out}
+function toBuy(){return basketItems().filter(x=>STOCK&&STOCK.has(x.id)&&!x.bought)}
+async function loadWallet(){if(!$("agentBox"))return;
+  try{if(!STOCK)STOCK=new Set((await api("/demo-shop/products")).products.map(p=>p.id))}catch(e){STOCK=new Set()}
+  if(ME){try{WALLET=await api("/api/wallet");ACTIVITY=(await api("/api/wallet/activity")).events}catch(e){WALLET={error:e.message}}}
+  else{WALLET=null;ACTIVITY=[]}
+  renderAgent()}
+function renderAgent(){const box=$("agentBox");if(!box)return;
+  const items=basketItems(),buyable=toBuy(),done=items.filter(x=>x.bought).length,other=items.filter(x=>!x.bought&&!(STOCK&&STOCK.has(x.id))).length;
+  const total=buyable.reduce((a,x)=>a+Math.round(x.it.price*100),0);
+  let h=`<div class="card sec agent"><h3 style="margin:0 0 4px">Let the helper buy it <span class="pill">Stripe sandbox · test card only</span></h3>
+   <p class="meta" style="margin:0 0 14px">Your agent pays North Pole Gift Co (a demo seller) with a one-time payment token capped at the exact total. The shop never sees your card, and the agent can't go over the limit you set.</p>`;
+  if(!ME){box.innerHTML=h+`<div class="row"><button class="btn" onclick="openAuth('signup')">Create account</button><button class="btn ghost" onclick="openAuth('login')">Sign in</button></div></div>`;return}
+  if(!WALLET){box.innerHTML=h+`<p class="meta">Loading…</p></div>`;return}
+  if(WALLET.error||!WALLET.ready){box.innerHTML=h+`<div class="note err" style="margin:0">${esc(WALLET.error||"The agent checkout isn't set up on this server yet.")}</div></div>`;return}
+  const card=WALLET.card,m=WALLET.mandate;
+  h+=`<div class="steps3">
+   <div class="step ${card?"done":""}"><b>1 · Card</b>${card?`<div>${esc((card.brand||"card").toUpperCase())} •••• ${esc(card.last4)}</div><button class="lnk" onclick="removeCard()">Remove</button>`:
+     `<div class="meta">Saved securely with Stripe.</div><button class="btn sm" onclick="openCard()">Save a card</button>`}</div>
+   <div class="step ${m?"done":""}"><b>2 · Mandate</b>${m?`<div>Up to ${cents(m.cap)} until ${fmtDate(m.expires_at)}</div><div class="meta">${cents(m.remaining)} left</div><button class="lnk" onclick="revokeMandate()">Revoke</button>`:
+     `<div class="row" style="gap:6px;margin-top:4px"><label class="mini">Cap $<input id="m_cap" type="number" min="1" max="2000" step="1" value="${Math.max(10,Math.ceil(total/1000)*10)}"></label>
+      <label class="mini">Until <input id="m_until" type="date" value="${defaultUntil()}"></label></div><button class="btn sm" style="margin-top:6px" onclick="setMandate()">Set mandate</button>`}</div>
+   <div class="step ${!buyable.length&&done?"done":""}"><b>3 · Approve</b><div>${buyable.length?`${buyable.length} gift${buyable.length===1?"":"s"} to buy · ${cents(total)}`:done?`All ${done} gift${done===1?"":"s"} bought ✓`:"Nothing to buy yet"}</div>
+     ${done&&buyable.length?`<div class="meta">${done} already bought</div>`:""}
+     <button class="btn red sm" ${card&&m&&buyable.length&&!busy?"":"disabled"} onclick="approve()">${busy?"Buying…":buyable.length?"Buy all with one approval":"All bought"}</button></div>
+  </div>`;
+  if(other)h+=`<p class="meta">${other} gift${other===1?" isn't":"s aren't"} stocked by North Pole Gift Co. Buy ${other===1?"it":"those"} at the shop with the links above.</p>`;
+  if(LAST)h+=LAST.ok?`<div class="note ok">Paid ${cents(LAST.total)} to ${esc(LAST.seller)}. Order <b>${esc(LAST.order)}</b> confirmed.</div>`:`<div class="note err">${esc(LAST.error)}</div>`;
+  if(ACTIVITY.length)h+=`<h3 style="margin:16px 0 6px;font-size:14px">Agent activity</h3><ol class="log">${ACTIVITY.slice(0,12).map(e=>`<li class="${esc(e.kind)}"><span class="t">${new Date(e.at*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>${esc(e.message)}</li>`).join("")}</ol>`;
+  box.innerHTML=h+`</div>`}
+function defaultUntil(){const d=new Date();d.setDate(d.getDate()+14);return d.toISOString().slice(0,10)}
+async function setMandate(){try{await api("/api/wallet/mandate",{cap:$("m_cap").value,expires_on:$("m_until").value});LAST=null}catch(e){LAST={error:e.message}}loadWallet()}
+async function revokeMandate(){try{await api("/api/wallet/mandate/revoke",{})}catch(e){}loadWallet()}
+async function removeCard(){try{await api("/api/wallet/card/remove",{})}catch(e){}loadWallet()}
+function loadStripeJs(){return new Promise((ok,bad)=>{if(window.Stripe)return ok();const s=document.createElement("script");s.src="https://js.stripe.com/v3/";s.onload=ok;s.onerror=()=>bad(new Error("Couldn't load Stripe's card form. Check your connection."));document.head.appendChild(s)})}
+async function openCard(){$("cardErr").classList.add("hide");$("cardDlg").showModal();$("cardMount").innerHTML='<p class="meta">Loading the secure card form…</p>';$("cardGo").disabled=true;
+  try{await loadStripeJs();stripeJs=stripeJs||Stripe(WALLET.publishable_key);
+    const {client_secret}=await api("/api/wallet/setup-intent",{});
+    elements=stripeJs.elements({clientSecret:client_secret,appearance:{theme:"stripe",variables:{colorPrimary:"#1f3d2f",borderRadius:"9px"}}});
+    $("cardMount").innerHTML="";elements.create("payment",{layout:"tabs"}).mount("#cardMount");$("cardGo").disabled=false}
+  catch(e){$("cardErr").textContent=e.message;$("cardErr").classList.remove("hide")}}
+$("cardCancel").addEventListener("click",()=>$("cardDlg").close());
+$("cardForm").addEventListener("submit",async e=>{e.preventDefault();const go=$("cardGo");go.disabled=true;$("cardErr").classList.add("hide");
+  try{const {error,setupIntent}=await stripeJs.confirmSetup({elements,redirect:"if_required"});
+    if(error)throw new Error(error.message);
+    await api("/api/wallet/card",{setup_intent:setupIntent.id});$("cardDlg").close();loadWallet()}
+  catch(err){$("cardErr").textContent=err.message;$("cardErr").classList.remove("hide")}
+  finally{go.disabled=false}});
+function approve(){const items=toBuy(),total=items.reduce((a,x)=>a+Math.round(x.it.price*100),0),c=WALLET.card;
+  $("apList").innerHTML=items.map(x=>`<tr><td>${esc(x.it.name)}</td><td>${esc(x.for)}</td><td class="r">${money(x.it.price)}</td></tr>`).join("")+`<tr><td colspan="2"><b>Total to North Pole Gift Co</b></td><td class="r"><b>${cents(total)}</b></td></tr>`;
+  $("apText").innerHTML=`Your agent will create a one-time payment token from your ${esc((c.brand||"card").toUpperCase())} •••• ${esc(c.last4)}, usable only by North Pole Gift Co, for up to <b>${cents(total)}</b>, valid 15 minutes. It counts against your mandate (${cents(WALLET.mandate.remaining)} left).`;
+  $("apDlg").showModal()}
+$("apCancel").addEventListener("click",()=>$("apDlg").close());
+$("apGo").addEventListener("click",async()=>{$("apDlg").close();busy=true;LAST=null;renderAgent();
+  const chosen=toBuy(),items=chosen.map(x=>({id:x.id,quantity:1,for:x.for,budget_max:x.budget_max}));
+  const key=(crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random()));
+  try{const j=await api("/api/wallet/purchase",{key,items});LAST={ok:true,...j};markBought(chosen,j.order)}catch(e){LAST={error:e.message}}
+  busy=false;renderBasket()});
 
 // ---- Account: sign up, sign in, sign out. The gift list still lives in this browser;
 // the account is what a connected wallet will belong to.
@@ -152,10 +223,10 @@ $("authSwap").addEventListener("click",()=>openAuth(authMode==="signup"?"login":
 $("authCancel").addEventListener("click",()=>$("authDlg").close());
 $("authForm").addEventListener("submit",async e=>{e.preventDefault();const go=$("authGo");go.disabled=true;
   try{const j=await api("/api/auth/"+authMode,{email:$("a_email").value.trim(),password:$("a_pw").value});
-    ME=j.user;$("authForm").reset();$("authDlg").close();renderAcct()}
+    ME=j.user;$("authForm").reset();$("authDlg").close();renderAcct();loadWallet()}
   catch(err){$("authErr").textContent=err.message;$("authErr").classList.remove("hide")}
   finally{go.disabled=false}});
-async function signOut(){try{await api("/api/auth/logout",{})}catch(e){}ME=null;renderAcct()}
+async function signOut(){try{await api("/api/auth/logout",{})}catch(e){}ME=null;LAST=null;renderAcct();loadWallet()}
 async function loadMe(){try{ME=(await api("/api/auth/me")).user}catch(e){ME=null}renderAcct()}
 
 // ---- Moving between the three steps
