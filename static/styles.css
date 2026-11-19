@@ -86,3 +86,28 @@ td.r,th.r{text-align:right}
 .bar{position:sticky;bottom:0;z-index:2;background:var(--green);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:10px}
 .hide{display:none}
 @media(max-width:720px){.grid,.recs{grid-template-columns:1fr}.span2,.span3{grid-column:auto}}
+.acct{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin:-18px 0 8px;min-height:30px;font-size:13px}
+.acct .who{color:#cfe0d6;overflow-wrap:anywhere}
+.lnk.light{color:#fff}
+.btn.gold{background:#e7c873;color:var(--green)}
+.btn.gold:hover{background:#f0d68e}
+dialog{border:0;border-radius:16px;padding:22px;max-width:420px;width:calc(100% - 32px);box-shadow:0 20px 60px #0004;color:var(--ink)}
+dialog::backdrop{background:#1f3d2f99}
+dialog .note{margin:12px 0 0}
+.agent h3{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pill{font:600 11px Inter,sans-serif;background:#fff7e0;border:1px solid #ecd89a;color:#6b5514;border-radius:999px;padding:2px 8px}
+.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.step{border:1px dashed var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.step.done{border-style:solid;border-color:#bcd6c6;background:#f4faf6}
+.step b{font-size:13px;color:var(--green)}
+.mini{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px;margin:0}
+.mini input{width:auto;padding:5px 6px;font-size:13px}
+.mini input[type=number]{width:72px}
+.note.ok{background:#eaf6ee;border-color:#b9dcc6;color:#1f5a3a}
+.log{list-style:none;margin:0;padding:0;font-size:13px}
+.log li{padding:6px 0 6px 18px;border-bottom:1px solid var(--line);position:relative}
+.log li:before{content:"";position:absolute;left:2px;top:12px;width:8px;height:8px;border-radius:50%;background:#9db3a6}
+.log li.ok:before{background:#2e8a55}.log li.blocked:before{background:#c89b3c}.log li.error:before{background:var(--red)}
+.log .t{color:var(--muted);margin-right:8px;font-variant-numeric:tabular-nums}
+@media(max-width:720px){.steps3{grid-template-columns:1fr}}
+.bought{color:#1f5a3a;font-weight:600;font-size:13px}

@@ -11,6 +11,7 @@
 <body>
 <div class="strip" id="strip" aria-hidden="true"></div>
 <header><div class="wrap">
+  <div class="acct" id="acct"></div>
   <div class="hero">
     <div>
       <div class="kicker">Christmas Shopping Helper</div>
@@ -60,6 +61,38 @@
   <div id="basket"></div>
 </section>
 </main>
+
+<dialog id="authDlg" aria-labelledby="authTitle">
+  <form id="authForm" novalidate>
+    <h2 id="authTitle" style="margin-top:0">Sign in</h2>
+    <p class="meta" id="authLead">Sign in to connect a wallet and let the helper buy gifts for you.</p>
+    <label for="a_email">Email</label><input id="a_email" type="email" autocomplete="email" required>
+    <label for="a_pw" style="margin-top:10px">Password</label><input id="a_pw" type="password" autocomplete="current-password" required>
+    <p class="hint" id="authHint"></p>
+    <div class="note err hide" id="authErr" role="alert"></div>
+    <div class="row" style="margin-top:14px;justify-content:space-between">
+      <button class="lnk" type="button" id="authSwap">Create an account instead</button>
+      <div class="row"><button class="btn ghost" type="button" id="authCancel">Cancel</button><button class="btn" type="submit" id="authGo">Sign in</button></div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="cardDlg" aria-labelledby="cardTitle">
+  <form id="cardForm" novalidate>
+    <h2 id="cardTitle" style="margin-top:0">Save a card</h2>
+    <p class="meta">Stripe's secure form: your card number goes to Stripe, never to this app. This is a sandbox, so use the test card <b>4242 4242 4242 4242</b>, any future date and any 3-digit code.</p>
+    <div id="cardMount" style="min-height:120px"></div>
+    <div class="note err hide" id="cardErr" role="alert"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn ghost" type="button" id="cardCancel">Cancel</button><button class="btn" type="submit" id="cardGo">Save card</button></div>
+  </form>
+</dialog>
+
+<dialog id="apDlg" aria-labelledby="apTitle">
+  <h2 id="apTitle" style="margin-top:0">Approve this purchase</h2>
+  <table id="apList"></table>
+  <p class="meta" id="apText" style="margin-top:12px"></p>
+  <div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn ghost" type="button" id="apCancel">Cancel</button><button class="btn red" type="button" id="apGo">Approve and buy</button></div>
+</dialog>
 
 <div class="bar hide" id="bar"><span id="barTxt"></span><button class="btn red" onclick="go(3)">Review basket →</button></div>
 
