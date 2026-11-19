@@ -6,6 +6,7 @@ Run it with:  python app.py     then open http://localhost:5000
   GET  /api/config           relationships and age bands for the form
   POST /api/recommendations  {"recipient": {...}} -> three picks plus alternates
   /api/auth/...              user accounts (see accounts.py)
+  /api/wallet/...            the agent's own wallet: saved card, mandate, purchase (see wallet.py)
   /demo-shop/...             North Pole Gift Co, the demo seller (see shop.py)
 
 API keys live in .env on the server and are never sent to the browser.
@@ -29,6 +30,7 @@ import db
 import matching
 import rules
 import shop
+import wallet
 from catalogue import CatalogueError, get_source, label
 from models import Recipient
 
@@ -97,6 +99,8 @@ def _configure(app: Flask, settings: dict):
         MAX_CONTENT_LENGTH=64 * 1024,
         SHOP_SECRET_KEY=(settings.get("SHOP_SECRET_KEY") or "").strip(),
         SHOP_PROFILE_ID=(settings.get("SHOP_PROFILE_ID") or "").strip(),
+        STRIPE_SECRET_KEY=(settings.get("STRIPE_SECRET_KEY") or "").strip(),
+        STRIPE_PUBLISHABLE_KEY=(settings.get("STRIPE_PUBLISHABLE_KEY") or "").strip(),
     )
     if hosted:  # Render's proxy tells us the real https address and visitor IP
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -116,6 +120,7 @@ def create_app(source=None, limiter=None, settings=None) -> Flask:
     _configure(app, settings)
     app.register_blueprint(accounts.bp)
     app.register_blueprint(shop.bp)
+    app.register_blueprint(wallet.bp)
     accounts.protect_from_other_sites(app)
     if source is None:
         try:

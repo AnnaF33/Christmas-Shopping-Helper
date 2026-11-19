@@ -44,6 +44,15 @@ MAX_QUANTITY = 10
 _CATALOGUE = {p.id: p for p in SampleSource().candidates(None)}
 
 
+def stock_ids() -> set:
+    """Product ids the shop sells."""
+    return set(_CATALOGUE)
+
+
+def product(product_id):
+    return _CATALOGUE.get(product_id)
+
+
 class ChargeError(Exception):
     """Stripe refused the payment. The message is safe to show the agent."""
 

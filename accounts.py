@@ -165,6 +165,6 @@ def protect_from_other_sites(app):
             allowed = [o.strip().rstrip("/") for o in app.config.get("ALLOWED_ORIGINS", [])]
             if origin.rstrip("/") not in allowed:
                 return jsonify(error="Request blocked: it came from another website."), 403
-        if request.path.startswith("/api/auth/") and not request.is_json:
+        if request.path.startswith(("/api/auth/", "/api/wallet")) and not request.is_json:
             return jsonify(error="Please send JSON."), 400
         return None

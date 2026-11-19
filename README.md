@@ -62,7 +62,8 @@ Set these in the service's **Environment** tab:
 | `app.py` | The web server, settings and the recommendation API |
 | `accounts.py` | Sign up, sign in, sign out; protection against other websites posting as a signed-in user |
 | `shop.py` | North Pole Gift Co, the demo seller: checkout API that charges Shared Payment Tokens |
-| `db.py` | The database tables (users, shop checkouts, idempotency keys) |
+| `wallet.py` | The agent's own wallet: saved card, mandate, one-approval purchase, activity log |
+| `db.py` | The database tables (users, wallets, mandates, purchases, agent activity, shop checkouts, idempotency keys) |
 | `rules.py` | Every tunable setting: scoring weights, age bands, relationships and their suggested price ranges |
 | `matching.py` | Scores products for a recipient and picks the best three |
 | `models.py` | The `Product` and `Recipient` definitions, and input validation |
@@ -155,8 +156,28 @@ refuses to run with live keys. The API follows the shape of a UCP checkout:
 - `shop_charge.py spt_...`: the shop charges a token from the Link Agent Wallet
 - `demo_shop_check.py`: a full purchase through the app's demo shop API
 
+## Agent checkout (save a card in the app)
+
+On the Basket page a signed-in buyer can let the helper buy the gifts North Pole Gift Co
+stocks (the sample catalogue):
+
+1. **Save a card** through Stripe's own card form (sandbox: test card 4242 4242 4242 4242).
+   The app keeps only Stripe's reference, the brand and the last four digits.
+2. **Set a mandate**: the most the agent may spend, and until when.
+3. **Buy all with one approval**. The agent opens a checkout at the shop, reserves the
+   shop's total against the mandate (or stops if it would go over), issues a payment token
+   from the saved card that only the shop can use, capped at that total and valid 15
+   minutes, and hands it to the shop, which charges it with its own Stripe account.
+
+Each step appears in the **Agent activity** log. A double click buys once, and a failed
+payment gives the reserved amount back to the mandate.
+
+For the live site to offer this, `CATALOGUE_SOURCE` must include `sample` (for example
+`sample` or `sample,shopify`), and Render needs `STRIPE_SECRET_KEY` and
+`STRIPE_PUBLISHABLE_KEY` from the agent's sandbox.
+
 ## Not built yet
 
-- Connecting a Link wallet and saving a card in the app, and buying the basket with them
+- Connecting a Link wallet (waiting on Stripe's OAuth approval)
 - Model-based matching and labelling of real listings
 - Saving the gift list to the account

@@ -54,6 +54,61 @@ shop_idempotency = Table(
 )
 
 
+# ---- The agent's own wallet (the "save a card in the app" path)
+
+# One saved card per user. Only Stripe's references and display details are kept:
+# the card number never reaches this app.
+wallets = Table(
+    "wallets", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("customer_id", String(80), nullable=False),
+    Column("payment_method_id", String(80)),
+    Column("brand", String(30)),
+    Column("last4", String(4)),
+    Column("exp_month", Integer),
+    Column("exp_year", Integer),
+    Column("updated_at", Integer, nullable=False),
+)
+
+# What the buyer has authorised the agent to spend: a cap and an end date.
+mandates = Table(
+    "mandates", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("cap", Integer, nullable=False),  # cents
+    Column("spent", Integer, nullable=False, default=0),  # cents, including in-flight purchases
+    Column("currency", String(3), nullable=False),
+    Column("expires_at", Integer, nullable=False),
+    Column("status", String(20), nullable=False),  # active, revoked, replaced
+    Column("created_at", Integer, nullable=False),
+)
+
+# One row per "Buy all" click. The client's key makes a double click harmless.
+purchases = Table(
+    "purchases", metadata,
+    Column("id", String(40), primary_key=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("client_key", String(80), nullable=False),
+    Column("mandate_id", Integer),
+    Column("status", String(20), nullable=False),  # started, completed, blocked, failed
+    Column("total", Integer),
+    Column("result", Text),  # JSON returned to the browser
+    Column("created_at", Integer, nullable=False),
+    UniqueConstraint("user_id", "client_key"),
+)
+
+# The agent activity log shown on the Basket page.
+agent_events = Table(
+    "agent_events", metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("purchase_id", String(40)),
+    Column("kind", String(30), nullable=False),  # info, ok, blocked, error
+    Column("message", Text, nullable=False),
+    Column("created_at", Integer, nullable=False),
+)
+
+
 def database_url(settings: dict) -> str:
     url = (settings.get("DATABASE_URL") or "").strip()
     if not url:
