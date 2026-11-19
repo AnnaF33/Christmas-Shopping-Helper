@@ -1,27 +1,38 @@
-"""The web server. Serves the interface and three small API endpoints.
+"""The web server. Serves the interface and the API.
 
 Run it with:  python app.py     then open http://localhost:5000
 
-  GET  /api/health           is the server up, and which catalogue is it using
+  GET  /api/health           is the server up, and which catalogue and database is it using
   GET  /api/config           relationships and age bands for the form
   POST /api/recommendations  {"recipient": {...}} -> three picks plus alternates
+  /api/auth/...              user accounts (see accounts.py)
+  /demo-shop/...             North Pole Gift Co, the demo seller (see shop.py)
 
 API keys live in .env on the server and are never sent to the browser.
 """
 from __future__ import annotations
 
+import logging
 import os
+import secrets
 import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import asdict
+from datetime import timedelta
 
 from flask import Flask, jsonify, request
+from werkzeug.middleware.proxy_fix import ProxyFix
 
+import accounts
+import db
 import matching
 import rules
+import shop
 from catalogue import CatalogueError, get_source, label
 from models import Recipient
+
+log = logging.getLogger(__name__)
 
 try:  # .env is optional: the sample catalogue needs no settings
     from dotenv import load_dotenv
@@ -68,13 +79,47 @@ class Limiter:
             return None
 
 
-def create_app(source=None, limiter=None) -> Flask:
+def _configure(app: Flask, settings: dict):
+    """Sessions, the database, the demo shop's keys, and running behind Render's proxy."""
+    hosted = bool(settings.get("RENDER") or settings.get("RENDER_EXTERNAL_URL"))
+    secret = (settings.get("SECRET_KEY") or "").strip()
+    if not secret:
+        if hosted:
+            log.warning("SECRET_KEY is not set: everyone is signed out whenever the app restarts. "
+                        "Set it in Render's Environment tab.")
+        secret = secrets.token_hex(32)
+    app.config.update(
+        SECRET_KEY=secret,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=hosted,  # https only once hosted
+        PERMANENT_SESSION_LIFETIME=timedelta(days=14),
+        MAX_CONTENT_LENGTH=64 * 1024,
+        SHOP_SECRET_KEY=(settings.get("SHOP_SECRET_KEY") or "").strip(),
+        SHOP_PROFILE_ID=(settings.get("SHOP_PROFILE_ID") or "").strip(),
+    )
+    if hosted:  # Render's proxy tells us the real https address and visitor IP
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    engine = db.connect(settings)
+    if hosted and db.kind(engine) == "sqlite":
+        log.warning("DATABASE_URL is not set: accounts are stored in a local file that Render "
+                    "wipes on every restart. Set DATABASE_URL to a Postgres database.")
+    app.extensions["db"] = engine
+    app.extensions["login_limiter"] = accounts.AttemptLimiter()
+
+
+def create_app(source=None, limiter=None, settings=None) -> Flask:
     app = Flask(__name__, static_folder="static", static_url_path="")
+    settings = dict(os.environ) if settings is None else settings
     state = {"source": source, "error": None}
     limiter = limiter or Limiter()
+    _configure(app, settings)
+    app.register_blueprint(accounts.bp)
+    app.register_blueprint(shop.bp)
+    accounts.protect_from_other_sites(app)
     if source is None:
         try:
-            state["source"] = get_source(dict(os.environ))
+            state["source"] = get_source(settings)
         except CatalogueError as e:
             state["error"] = str(e)  # start anyway so the page can show what is wrong
 
@@ -86,7 +131,9 @@ def create_app(source=None, limiter=None) -> Flask:
     def health():
         ok = state["source"] is not None
         return jsonify(status="ok" if ok else "misconfigured",
-                       source=state["source"].name if ok else None, error=state["error"])
+                       source=state["source"].name if ok else None, error=state["error"],
+                       database=db.kind(app.extensions["db"]),
+                       demo_shop_ready=shop.is_configured())
 
     @app.get("/api/config")
     def config():

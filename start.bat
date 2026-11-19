@@ -13,7 +13,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-"%PY%" -c "import flask, dotenv, requests" >nul 2>nul
+"%PY%" -c "import flask, dotenv, requests, sqlalchemy" >nul 2>nul
 if errorlevel 1 (
   echo Installing what the app needs. This happens once and can take a minute...
   "%PY%" -m pip install -r requirements.txt

@@ -3,7 +3,7 @@
 Enter the people you're buying for, get three gift recommendations each, tick the ones you
 want, and review a basket grouped by shop.
 
-This is the first real-app version: a small Python server plus the web page. It can search the invented sample catalogue, Shopify, Etsy, or several at once.
+A small Python server plus the web page. It can search the invented sample catalogue, Shopify, Etsy, or several at once. It has user accounts, and a demo seller, North Pole Gift Co, that accepts agent payments with Stripe Shared Payment Tokens in Stripe's sandbox.
 
 ## Run it
 
@@ -42,11 +42,27 @@ browser, so nothing is lost when the service sleeps.
 
 To publish a change: upload the changed files to GitHub and Render redeploys by itself.
 
+### Settings Render needs
+
+Set these in the service's **Environment** tab:
+
+| Setting | What it is |
+|---|---|
+| `SECRET_KEY` | Long random text that signs the sign-in cookie. Without it everyone is signed out on every restart. |
+| `DATABASE_URL` | A Postgres database (for example a free Neon database). Without it accounts and orders are lost whenever Render restarts or sleeps. |
+| `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_PROFILE_ID` | The agent's Stripe sandbox ("New business") |
+| `SHOP_SECRET_KEY`, `SHOP_PROFILE_ID` | North Pole Gift Co's own, separate Stripe sandbox |
+
+`/api/health` shows which database is in use and whether the demo shop is set up.
+
 ## What's where
 
 | File | What it does |
 |---|---|
-| `app.py` | The web server and its three API endpoints |
+| `app.py` | The web server, settings and the recommendation API |
+| `accounts.py` | Sign up, sign in, sign out; protection against other websites posting as a signed-in user |
+| `shop.py` | North Pole Gift Co, the demo seller: checkout API that charges Shared Payment Tokens |
+| `db.py` | The database tables (users, shop checkouts, idempotency keys) |
 | `rules.py` | Every tunable setting: scoring weights, age bands, relationships and their suggested price ranges |
 | `matching.py` | Scores products for a recipient and picks the best three |
 | `models.py` | The `Product` and `Recipient` definitions, and input validation |
@@ -56,7 +72,8 @@ To publish a change: upload the changed files to GitHub and Render redeploys by 
 | `gunicorn.conf.py` | Web server settings used by the hosting service |
 | `wsgi.py` | Entry point the hosting service uses |
 | `static/` | The web page: `index.html`, `styles.css`, `app.js` |
-| `tests/test_app.py` | Automated checks of the rules and the API |
+| `tests/` | Automated checks of the rules, the API, accounts and the demo shop |
+| `check_spt.py`, `shop_charge.py`, `demo_shop_check.py` | Live sandbox checks you run by hand (see below) |
 
 To change how gifts are ranked, edit `WEIGHTS` in `rules.py`. To change the dropdowns or
 suggested price ranges, edit `RELATIONSHIPS` or `AGE_BANDS` in the same file; the page picks
@@ -112,8 +129,34 @@ against the documented examples, but expect small fixes on first use.
 To protect the shops' request allowances, the public site allows 30 recipient searches per
 visitor per 10 minutes and 800 per day in total. Change these in `rules.py`.
 
+## Accounts
+
+Anyone can create an account with an email and a password of at least 10 characters.
+Passwords are stored only as salted hashes. Repeated failed sign-ins are paused for 15
+minutes. The gift list is still saved in the browser; the account is what a connected
+wallet will belong to.
+
+## North Pole Gift Co (demo seller)
+
+An invented shop that sells the sample catalogue and takes payment from agents. It plays a
+separate business: it charges with its own Stripe account (`SHOP_SECRET_KEY`), and agents
+pay it with a Shared Payment Token scoped to its Stripe profile (`SHOP_PROFILE_ID`). It
+refuses to run with live keys. The API follows the shape of a UCP checkout:
+
+- `GET /demo-shop/.well-known/ucp`: who the shop is and how to pay it
+- `POST /demo-shop/checkouts`: start a checkout; prices come from the shop's catalogue
+- `POST /demo-shop/checkouts/<id>/complete`: pay with a token; needs an `Idempotency-Key`
+  header, so a retried request never charges twice
+
+### Live sandbox checks
+
+- `check_spt.py`: the agent issues tokens and the shop charges them, including the
+  over-limit and revoked-token refusals
+- `shop_charge.py spt_...`: the shop charges a token from the Link Agent Wallet
+- `demo_shop_check.py`: a full purchase through the app's demo shop API
+
 ## Not built yet
 
+- Connecting a Link wallet and saving a card in the app, and buying the basket with them
 - Model-based matching and labelling of real listings
-- User accounts (the gift list is saved in the browser only)
-- Agent checkout (v2). In this version you buy at the shop.
+- Saving the gift list to the account
